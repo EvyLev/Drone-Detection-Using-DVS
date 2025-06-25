@@ -10,7 +10,7 @@ from concurrent.futures import ProcessPoolExecutor
 import matplotlib
 
 #====Main Function==== 
-def generate_frames(events, resolution, time_bin, my_resonators, my_resonators_freq, cd_path, save_path):
+def generate_frames(events, resolution, time_bin, my_resonators, my_resonators_freq, save_path):
     # Create df to be saved as CSV
     hedars = ["Frame Number", "Pixel Found", "FFT Freq"]
     values = ["N/A", "N/A", "N/A"]
@@ -84,7 +84,7 @@ def generate_frames(events, resolution, time_bin, my_resonators, my_resonators_f
                 if 1 in pixel_p and -1 in pixel_p:
                     # Create and Save signal 
                     values[1] = f"x{pixel_x}y{pixel_y}"
-                    folder = f"{cd_path}/{save_path}/frame_{int(current_time/time_bin)}_pixel_{values[1]}"
+                    folder = f"{save_path}/frame_{int(current_time/time_bin)}_pixel_{values[1]}"
                     
                     os.makedirs(folder, exist_ok=True)
                     my_signal, signal_xexis = sf.create_signal(pixel_p, pixel_t, pixel_x, pixel_y, folder)
@@ -121,7 +121,7 @@ def generate_frames(events, resolution, time_bin, my_resonators, my_resonators_f
         frames.append(frame)
         current_time += time_bin
 
-    df.to_csv(f"{cd_path}/{save_path}/data.csv", index=False)
+    df.to_csv(f"{save_path}/data.csv", index=False)
     return frames
 
 if __name__ == "__main__":
@@ -180,27 +180,27 @@ if __name__ == "__main__":
                         ]
 
     #====Load Data====
-    cd_path = os.getcwd()
-    file_path = "/Data/2022_12_12_144923_events.csv"
+    print(os.getcwd())
+    file_path = input("Enter data input path: ")
+    save_path = input("Enter data output path: ")
     time_frame = 0.033 # Choose length of time for the time frame worked on, also determeans videos fps
-    data = sf.load_data(cd_path + file_path, 1e6, time_frame)
-    save_path = "Data/2022_12_12_144923_events"
+    data = sf.load_data(file_path, 1e6, time_frame)
     resolution = (1280, 720)
 
     # Generate frames with optimized code
-    frames = generate_frames(data, resolution, time_frame, my_resonators, my_resonators_freq, cd_path, save_path)
+    frames = generate_frames(data, resolution, time_frame, my_resonators, my_resonators_freq, save_path)
 
     # Define video parameters
     output_path = "event_video.mp4"
     fps = int(1 / time_frame)  # Calculate FPS based on time bin
 
     # Initialize video writer
-    video_writer = cv2.VideoWriter(f"{cd_path}/{save_path}/event_video.mp4", cv2.VideoWriter_fourcc(*'mp4v'), fps, resolution, isColor=True)
+    video_writer = cv2.VideoWriter(f"{save_path}/event_video.mp4", cv2.VideoWriter_fourcc(*'mp4v'), fps, resolution, isColor=True)
 
     # Write each frame to the video
     for frame in frames:
         video_writer.write(frame)
 
     video_writer.release()
-    print(f"Video saved at: {cd_path}/{save_path}/event_video.mp4")
+    print(f"Video saved at: {save_path}/event_video.mp4")
     print(f"total run time: {datetime.now() - start_run_time}")
