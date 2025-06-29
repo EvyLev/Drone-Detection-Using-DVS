@@ -8,6 +8,7 @@ import support_functions as sf
 import my_resonators as mr
 from concurrent.futures import ProcessPoolExecutor
 import matplotlib
+from scipy.spatial.distance import cdist
 
 #====Main Function==== 
 def generate_frames(events, resolution, time_bin, my_resonators, my_resonators_freq, save_path):
@@ -46,10 +47,26 @@ def generate_frames(events, resolution, time_bin, my_resonators, my_resonators_f
         coords = current_events[['x', 'y']].values
         labels_length = 0
         if len(coords) > 0:
-            clustering = DBSCAN(eps=2.5, min_samples=30, n_jobs=-1).fit(coords)
+            clustering = DBSCAN(eps=10, min_samples=50, n_jobs=-1).fit(coords)
             labels = clustering.labels_
             labels_length = len(set(labels))
         
+        #==== TEST=== 
+        # Create diffrent posetive and negative event arrays
+        pos_events = current_events[current_events['p'] == 1]
+        neg_events = current_events[current_events['p'] == 0]
+        # Get coordinates of posetive and negative events
+        pos_coords = pos_events[['x', 'y']].values
+        neg_coords = neg_events[['x', 'y']].values
+        # Cluster using DBSCAN
+        if len(pos_coords) > 0:
+            pos_clustering = DBSCAN(eps=16, min_samples=150, n_jobs=-1).fit(pos_coords) # Pos events are more sparse 
+            pos_labels = pos_clustering.labels_
+        if len(coords) > 0:
+            neg_clustering = DBSCAN(eps=10, min_samples=150, n_jobs=-1).fit(neg_coords)
+            neg_labels = neg_clustering.labels_
+        #=============
+
         # Set defult csv output
         for i in range(row_len) :
             values[i] = "N/A"
@@ -58,6 +75,47 @@ def generate_frames(events, resolution, time_bin, my_resonators, my_resonators_f
 
         # Process largest cluster
         if labels_length > 1:
+            ### Boxes for all clustres check
+            pos_features = sf.cluster_fetures(pos_coords, pos_labels)
+            neg_features = sf.cluster_fetures(neg_coords, neg_labels)
+            # Pos box 
+            
+            # Draw bounding box on pos
+            for f in pos_features:
+                cv2.rectangle(frame, f["min"], f["max"], (0, 255, 0), thickness=2)
+            
+            # Draw bounding box on neg
+            for f in neg_features:
+                cv2.rectangle(frame, f["min"], f["max"], (0, 0, 255), thickness=2)
+            
+            # Create movement vector
+            pos_mid_points = np.array([f["centroid"] for f in pos_features])
+            neg_mid_points = np.array([f["centroid"] for f in neg_features])
+
+            if len(pos_mid_points) > 0 and len(neg_mid_points) > 0:
+                dist = cdist(neg_mid_points, pos_mid_points)
+                nearest_pos_idx = np.argmin(dist, axis= 1)
+                nearest_dist = dist[np.arange(len(neg_mid_points)), nearest_pos_idx]
+
+                # Filter by size and distance
+                for neg_idx, pos_idx in enumerate(nearest_pos_idx):
+                    neg_feat = neg_features[neg_idx]
+                    pos_feat = pos_features[pos_idx]
+                    curr_dist = nearest_dist[neg_idx]
+
+                    ratio = neg_feat["size"]/  pos_feat["size"] if pos_feat["size"] > 0 else 0
+                    if ratio < 0.25 or ratio > 4.0:
+                        continue
+                    
+                    threshold = 2
+                    if curr_dist > threshold * ((neg_feat["box_size"] + pos_feat["box_size"])/2): # Avreage box size times the threshold
+                        continue
+
+                    neg_mid = tuple(map(int, neg_mid_points[neg_idx]))
+                    pos_mid = tuple(map(int, pos_mid_points[pos_idx]))
+                    cv2.arrowedLine(frame, pos_mid, neg_mid, (255,0,0), thickness=2, tipLength=0.4)
+            ### End Test
+
             cluster_sizes = np.bincount(labels[labels != -1])
             largest_cluster_label = np.argmax(cluster_sizes)
             max_cluster = coords[labels == largest_cluster_label]
@@ -67,8 +125,8 @@ def generate_frames(events, resolution, time_bin, my_resonators, my_resonators_f
             xmax, ymax = max_cluster.max(axis=0)
 
             # Draw bounding box 
-            color1 = (255, 51, 204)  # Hot Pink 
-            cv2.rectangle(frame, (xmin, ymin), (xmax, ymax), color1, thickness=2)
+            color1 = (255, 50, 204)  # Hot Pink 
+            # cv2.rectangle(frame, (xmin, ymin), (xmax, ymax), color1, thickness=2)
 
             # Get most active pixel
             pixel_x, pixel_y = sf.pixel_with_most_transitions(current_events, labels, largest_cluster_label)
@@ -78,7 +136,6 @@ def generate_frames(events, resolution, time_bin, my_resonators, my_resonators_f
             pixel_t = pixel_data['t'].values - pixel_data['t'].min()
             pixel_p = pixel_data['p'].values * 2 - 1
 
-            
 
             if len(pixel_t) > 0: 
                 if 1 in pixel_p and -1 in pixel_p:
@@ -110,7 +167,7 @@ def generate_frames(events, resolution, time_bin, my_resonators, my_resonators_f
                     # Save Worked On Frame With Pixel workd on (not only that pixel but a small cluster)
                     color2 = (255, 0, 0)
                     frame_copy = frame.copy()
-                    cv2.circle(frame_copy,(pixel_x, pixel_y), radius = 3, color = color2, thickness = -1)
+                    # cv2.circle(frame_copy,(pixel_x, pixel_y), radius = 3, color = color2, thickness = -1)
                     cv2.imwrite(f"{folder}/selected_pixel.png", frame_copy)
         
 
@@ -160,7 +217,7 @@ if __name__ == "__main__":
                     # r462,
                     # r509,
                     # r636,
-                    r694
+                    # r694
                     ]
     my_resonators_freq = [
                         # 105,
@@ -176,11 +233,10 @@ if __name__ == "__main__":
                         # 462,
                         # 509,
                         # 636,
-                        694
+                        # 694
                         ]
 
     #====Load Data====
-    print(os.getcwd())
     file_path = input("Enter data input path: ")
     save_path = input("Enter data output path: ")
     time_frame = 0.033 # Choose length of time for the time frame worked on, also determeans videos fps

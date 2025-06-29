@@ -237,6 +237,36 @@ def pixel_with_most_transitions(current_events, labels, largest_cluster_label):
     return int(best_pixel[0]), int(best_pixel[1])
 
 #=====================================================================================
+#================================= TEST ==============================================
+#=====================================================================================
+# def associate_bubbles(current_clusters, previous_clusters, max_distance = 10):
+    # clusters array == [{'id': int, 'x_mid': int, 'y_mid': int, 'h': int, 'w':int}]
+
+def cluster_fetures(coords, labels, proximity_thresh=15):
+    # get importent features of clusters and mearge overlaping ones
+    features = []
+    for label in set(labels):
+        if label == -1:
+            continue
+        cluster_points = coords[labels == label]
+        centroid = cluster_points.mean(axis=0)
+
+        xmin, ymin = cluster_points.min(axis=0)
+        xmax, ymax = cluster_points.max(axis=0)
+        box_size = np.sqrt((xmax - xmin)**2 + (ymax - ymin)**2)  # diagonal size
+
+        features.append({
+            "label": label,
+            "centroid": centroid,
+            "min": (xmin, ymin),
+            "max":(xmax, ymax),
+            "points": cluster_points,
+            "box_size": box_size,
+            "size": len(cluster_points)
+        })
+    return features
+    
+#=====================================================================================
 #================================= NOT IN USE ========================================
 #=====================================================================================
 #==== util function to plot how resonator react on a signal with given frequencies====
