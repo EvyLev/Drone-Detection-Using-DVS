@@ -19,8 +19,8 @@ def generate_frames(events, resolution, time_bin, my_resonators, my_resonators_f
         hedars.append(str(my_resonators_freq[i]) +" Peak to Peak")
 
         values += ["N/A"]
-    hedars.append("Pixel Is On Drone")
-    values.append("Yes/No")
+    hedars.append("Drone in frame")
+    values.append("No")
     row_len = len(hedars)
     df = pd.DataFrame(columns = hedars)
 
@@ -31,8 +31,20 @@ def generate_frames(events, resolution, time_bin, my_resonators, my_resonators_f
     end_time = events['t'].max()
     current_time = start_time
 
+    # Array of moving objects
+    mem_moving_obj = [] # [[{fetures of lest moving cluster}, number of time frames not used, drone was detacted]]
+
     # While loop over time frames
     while current_time < end_time:
+        # Update mem_move
+        i = 0
+        while i < len(mem_moving_obj):
+            if mem_moving_obj[i][1] == 2:
+                mem_moving_obj.pop(i)
+            else:
+                mem_moving_obj[i][1] += 1
+                i += 1
+            
         frame = np.ones((height, width, 3), dtype=np.uint8) * 128
         # Filter events for the current time window
         mask = (events['t'] >= current_time) & (events['t'] < current_time + time_bin)
@@ -43,15 +55,6 @@ def generate_frames(events, resolution, time_bin, my_resonators, my_resonators_f
             current_events["p"].values[:, None] == 0, [0, 0, 0], [255, 255, 255]
         )
 
-        # Cluster detection using DBSCAN
-        coords = current_events[['x', 'y']].values
-        labels_length = 0
-        if len(coords) > 0:
-            clustering = DBSCAN(eps=10, min_samples=50, n_jobs=-1).fit(coords)
-            labels = clustering.labels_
-            labels_length = len(set(labels))
-        
-        #==== TEST=== 
         # Create diffrent posetive and negative event arrays
         pos_events = current_events[current_events['p'] == 1]
         neg_events = current_events[current_events['p'] == 0]
@@ -62,114 +65,120 @@ def generate_frames(events, resolution, time_bin, my_resonators, my_resonators_f
         if len(pos_coords) > 0:
             pos_clustering = DBSCAN(eps=16, min_samples=150, n_jobs=-1).fit(pos_coords) # Pos events are more sparse 
             pos_labels = pos_clustering.labels_
-        if len(coords) > 0:
+        if len(neg_coords) > 0:
             neg_clustering = DBSCAN(eps=10, min_samples=150, n_jobs=-1).fit(neg_coords)
             neg_labels = neg_clustering.labels_
-        #=============
 
         # Set defult csv output
         for i in range(row_len) :
             values[i] = "N/A"
-        values[-1] = "Yes/No"
+        values[-1] = "No"
         
+        ### Boxes for all clustres check
+        pos_features = sf.cluster_fetures(pos_coords, pos_labels)
+        neg_features = sf.cluster_fetures(neg_coords, neg_labels)
+        # Pos box 
+        
+        # Draw bounding box on pos
+        for f in pos_features:
+            cv2.rectangle(frame, f["min"], f["max"], (0, 255, 0), thickness=2)
+        
+        # Draw bounding box on neg
+        for f in neg_features:
+            cv2.rectangle(frame, f["min"], f["max"], (0, 0, 255), thickness=2)
+        
+        # Create movement vector
+        pos_mid_points = np.array([f["centroid"] for f in pos_features])
+        neg_mid_points = np.array([f["centroid"] for f in neg_features])
+        
+        # work on pos and negative cluster if there are any
+        if len(pos_mid_points) > 0 and len(neg_mid_points) > 0:
+            dist = cdist(neg_mid_points, pos_mid_points)
+            nearest_pos_idx = np.argmin(dist, axis= 1)
+            nearest_dist = dist[np.arange(len(neg_mid_points)), nearest_pos_idx]
 
-        # Process largest cluster
-        if labels_length > 1:
-            ### Boxes for all clustres check
-            pos_features = sf.cluster_fetures(pos_coords, pos_labels)
-            neg_features = sf.cluster_fetures(neg_coords, neg_labels)
-            # Pos box 
-            
-            # Draw bounding box on pos
-            for f in pos_features:
-                cv2.rectangle(frame, f["min"], f["max"], (0, 255, 0), thickness=2)
-            
-            # Draw bounding box on neg
-            for f in neg_features:
-                cv2.rectangle(frame, f["min"], f["max"], (0, 0, 255), thickness=2)
-            
-            # Create movement vector
-            pos_mid_points = np.array([f["centroid"] for f in pos_features])
-            neg_mid_points = np.array([f["centroid"] for f in neg_features])
-
-            if len(pos_mid_points) > 0 and len(neg_mid_points) > 0:
-                dist = cdist(neg_mid_points, pos_mid_points)
-                nearest_pos_idx = np.argmin(dist, axis= 1)
-                nearest_dist = dist[np.arange(len(neg_mid_points)), nearest_pos_idx]
-
-                # Filter by size and distance
-                for neg_idx, pos_idx in enumerate(nearest_pos_idx):
-                    neg_feat = neg_features[neg_idx]
-                    pos_feat = pos_features[pos_idx]
-                    curr_dist = nearest_dist[neg_idx]
-
-                    ratio = neg_feat["size"]/  pos_feat["size"] if pos_feat["size"] > 0 else 0
-                    if ratio < 0.25 or ratio > 4.0:
-                        continue
-                    
-                    threshold = 2
-                    if curr_dist > threshold * ((neg_feat["box_size"] + pos_feat["box_size"])/2): # Avreage box size times the threshold
-                        continue
-
+            # Filter by size and distance
+            for neg_idx, pos_idx in enumerate(nearest_pos_idx):
+                if sf.cluster_correlation(neg_features[neg_idx],pos_features[pos_idx], size_diff = 3, dist_threshold = 2):
                     neg_mid = tuple(map(int, neg_mid_points[neg_idx]))
                     pos_mid = tuple(map(int, pos_mid_points[pos_idx]))
                     cv2.arrowedLine(frame, pos_mid, neg_mid, (255,0,0), thickness=2, tipLength=0.4)
-            ### End Test
+                    merged_features = sf.merge_clusters(pos_features[pos_idx], neg_features[neg_idx])
+                    cv2.rectangle(frame, merged_features["min"], merged_features["max"], (255, 50, 204), thickness=2)
 
-            cluster_sizes = np.bincount(labels[labels != -1])
-            largest_cluster_label = np.argmax(cluster_sizes)
-            max_cluster = coords[labels == largest_cluster_label]
+                    updated = 0
+                    for i in mem_moving_obj:
+                        if sf.cluster_correlation(merged_features, i[0]):
+                            i[0] = merged_features
+                            i[1] = 0
+                            updated = 1
+                            break
+                    if updated == 0:
+                        mem_moving_obj.append([merged_features, 0, 0])
+            frame_folder = f"{save_path}/frame_{int(current_time/time_bin)}"
+            os.makedirs(frame_folder, exist_ok=True)
+            cv2.imwrite(f"{frame_folder}/selected_clusters.png", frame)
+            
+            for k in range(len(mem_moving_obj)):
+                if mem_moving_obj[k][1] == 0:
+                    if mem_moving_obj[k][2] == 1:
+                        values[-1] = "Yes"
+                    current_features = mem_moving_obj[k][0]
+                    # Create a mask for the merged cluster
+                    merged_coords = current_features["points"]
+                    mask = np.isin(current_events[['x', 'y']].values, merged_coords).all(axis=1)
+                    cluster_events = current_events[mask].copy()
+                    pixel_x, pixel_y = sf.pixel_with_most_transitions(cluster_events)
 
-            # Get bounding box coordinates
-            xmin, ymin = max_cluster.min(axis=0)
-            xmax, ymax = max_cluster.max(axis=0)
+                    object_folder = f"{frame_folder}/cluster_{k}"
+                    os.makedirs(object_folder, exist_ok=True)
+                    
+                    if mem_moving_obj[k][2] == 1:
+                        cx, cy = int(current_features["centroid"][0]), int(current_features["centroid"][1])
+                        xmin, ymin = current_features["min"]
+                        xmax, ymax = current_features["max"]
+                        cv2.line(frame, (xmin, cy), (xmax, cy), (0, 255, 255), thickness=2)
+                        cv2.line(frame, (cx, ymin), (cx, ymax), (0, 255, 255), thickness=2)
 
-            # Draw bounding box 
-            color1 = (255, 50, 204)  # Hot Pink 
-            # cv2.rectangle(frame, (xmin, ymin), (xmax, ymax), color1, thickness=2)
-
-            # Get most active pixel
-            pixel_x, pixel_y = sf.pixel_with_most_transitions(current_events, labels, largest_cluster_label)
-
-            # Extract events for the selected pixel
-            pixel_data = current_events[(current_events["x"] == pixel_x) & (current_events["y"] == pixel_y)]
-            pixel_t = pixel_data['t'].values - pixel_data['t'].min()
-            pixel_p = pixel_data['p'].values * 2 - 1
+                    # Extract events for the selected pixel
+                    pixel_data = current_events[(current_events["x"] == pixel_x) & (current_events["y"] == pixel_y)]
+                    if len(pixel_data) < 20:
+                        continue
+                    pixel_t = pixel_data['t'].values - pixel_data['t'].min()
+                    pixel_p = pixel_data['p'].values * 2 - 1
 
 
-            if len(pixel_t) > 0: 
-                if 1 in pixel_p and -1 in pixel_p:
                     # Create and Save signal 
                     values[1] = f"x{pixel_x}y{pixel_y}"
-                    folder = f"{save_path}/frame_{int(current_time/time_bin)}_pixel_{values[1]}"
+                    folder = f"{object_folder}/frame_{int(current_time/time_bin)}_pixel_{values[1]}"
                     
                     os.makedirs(folder, exist_ok=True)
                     my_signal, signal_xexis = sf.create_signal(pixel_p, pixel_t, pixel_x, pixel_y, folder)
                     # spike_signal, spike_signal_xexis = sf.create_spike_signal(pixel_p, pixel_t, pixel_x, pixel_y, folder)
                     # Polarity and FFT of signal
-                    values[2] = sf.event_pixel_fft(my_signal.copy(), pixel_x, pixel_y, folder) # Get max freq of FFT
+                    fft_freq = sf.event_pixel_fft(my_signal.copy(), pixel_x, pixel_y, folder) # Get max freq of FFT
 
-                    
-
-                    # Make fft freq accessible for subprocesses
-                    fft_freq = values[2]
+                    if k == 0:
+                        values[2] = fft_freq
 
                     args = [(j, my_signal, folder, my_resonators, my_resonators_freq, fft_freq, pixel_x, pixel_y) for j in range(len(my_resonators))]
                     with ProcessPoolExecutor(max_workers=os.cpu_count()) as executor:
                         results = list(executor.map(sf.process_resonator, args))
 
-
                     # Fill `values`
-                    for j, max_amp, min_amp, mean_amp, diff, fft_diff in results: # Most values in result are not currently used
-                        i = 3 + j 
-                        values[i] = diff
-                        
-                    # Save Worked On Frame With Pixel workd on (not only that pixel but a small cluster)
-                    color2 = (255, 0, 0)
-                    frame_copy = frame.copy()
-                    # cv2.circle(frame_copy,(pixel_x, pixel_y), radius = 3, color = color2, thickness = -1)
-                    cv2.imwrite(f"{folder}/selected_pixel.png", frame_copy)
-        
+                    if k == 0:
+                        for j, max_amp, min_amp, mean_amp, diff, fft_diff in results: # Most values in result are not currently used
+                            i = 3 + j
+                            values[i] = diff
+                            if diff > 300:
+                                mem_moving_obj[k][2] = 1
+                                values[-1] = "Yes"
+                    if mem_moving_obj[k][2] == 1:
+                        cx, cy = int(current_features["centroid"][0]), int(current_features["centroid"][1])
+                        xmin, ymin = current_features["min"]
+                        xmax, ymax = current_features["max"]
+                        cv2.line(frame, (xmin, cy), (xmax, cy), (0, 255, 255), thickness=2)
+                        cv2.line(frame, (cx, ymin), (cx, ymax), (0, 255, 255), thickness=2)
 
         # Save data to csv
         values[0] = int(current_time/time_bin) 
@@ -215,7 +224,7 @@ if __name__ == "__main__":
                     # r250,
                     # r268,
                     # r462,
-                    # r509,
+                    r509,
                     # r636,
                     # r694
                     ]
@@ -231,7 +240,7 @@ if __name__ == "__main__":
                         # 250,
                         # 268,
                         # 462,
-                        # 509,
+                        509,
                         # 636,
                         # 694
                         ]
