@@ -8,6 +8,7 @@ from sklearn.cluster import DBSCAN
 from sctn.resonator import resonator
 from my_resonators import clk_freq
 from concurrent.futures import ProcessPoolExecutor
+from scipy.spatial.distance import cdist
 
 #====Function to load data into workable 
 def load_data(file_path, time = 1e6, time_frame = 0.33):
@@ -202,30 +203,21 @@ def process_resonator(args):
     return (j, max_amp, min_amp, mean_amp, diff, fft_diff)
 
 # Choose Pixel
-def pixel_with_most_transitions(current_events, labels, largest_cluster_label):
-    # Filter events belonging to the largest cluster
-    cluster_mask = (labels == largest_cluster_label)
-    cluster_events = current_events[cluster_mask]
-
+def pixel_with_most_transitions(events):
     # Extract position, time, polarity columns
-    cluster_xy = cluster_events[["x", "y"]].values
-    cluster_t = cluster_events["t"].values
-    cluster_p = cluster_events["p"].values  # polarities are 0 or 1
+    xy = events[["x", "y"]].values
+    t = events["t"].values
+    p = events["p"].values  # 0 or 1
 
-    # Combine into one array for sorting (x, y, t, p)
-    combined = np.column_stack((cluster_xy, cluster_t, cluster_p))
-
-    # Sort by x, y, then time to ensure events are ordered per pixel by time
+    combined = np.column_stack((xy, t, p))
     sort_idx = np.lexsort((combined[:, 2], combined[:, 1], combined[:, 0]))
     combined_sorted = combined[sort_idx]
 
-    # Find unique pixels and indices/counts in sorted array
     xy_keys, indices, counts = np.unique(combined_sorted[:, :2], axis=0, return_index=True, return_counts=True)
 
     max_transitions = -1
     best_pixel = None
 
-    # Loop over each pixel to count polarity transitions
     for i in range(len(xy_keys)):
         start, end = indices[i], indices[i] + counts[i]
         polarity = combined_sorted[start:end, 3]
@@ -236,14 +228,8 @@ def pixel_with_most_transitions(current_events, labels, largest_cluster_label):
 
     return int(best_pixel[0]), int(best_pixel[1])
 
-#=====================================================================================
-#================================= TEST ==============================================
-#=====================================================================================
-# def associate_bubbles(current_clusters, previous_clusters, max_distance = 10):
-    # clusters array == [{'id': int, 'x_mid': int, 'y_mid': int, 'h': int, 'w':int}]
-
-def cluster_fetures(coords, labels, proximity_thresh=15):
-    # get importent features of clusters and mearge overlaping ones
+def cluster_fetures(coords, labels):
+    # get importent features of clusters
     features = []
     for label in set(labels):
         if label == -1:
@@ -265,6 +251,43 @@ def cluster_fetures(coords, labels, proximity_thresh=15):
             "size": len(cluster_points)
         })
     return features
+
+#=====================================================================================
+#================================= TEST ==============================================
+#=====================================================================================
+# def associate_bubbles(current_clusters, previous_clusters, max_distance = 10):
+    # clusters array == [{'id': int, 'x_mid': int, 'y_mid': int, 'h': int, 'w':int}]
+
+def merge_clusters(pos_cluster, neg_cluster):
+    merged_points = np.vstack([pos_cluster["points"], neg_cluster["points"]])
+    xmin, ymin = merged_points.min(axis=0)
+    xmax, ymax = merged_points.max(axis=0)
+    centroid = merged_points.mean(axis=0)
+
+    merged_cluster = {
+        "label": f"merged_{pos_cluster['label']}_{neg_cluster['label']}",
+        "centroid": centroid,
+        "min": (xmin, ymin),
+        "max": (xmax, ymax),
+        "points": merged_points,
+        "box_size": np.sqrt((xmax - xmin) ** 2 + (ymax - ymin) ** 2),
+        "size": len(merged_points)
+    }
+
+    return merged_cluster
+
+def cluster_correlation(features1, features2, size_diff = 2, dist_threshold = 2):
+    # Checks if 2 clusters are close enough and similer size to be labeld as correlated
+    x1, y1 = features1["centroid"]
+    x2, y2 = features2["centroid"]
+    dist = np.sqrt((x1 - x2)**2 + (y1 - y2)**2)
+    ratio = features1["size"]/  features2["size"] if features2["size"] > 0 else 0
+    if ratio < 1/size_diff or size_diff > 4.0:
+        return False
+    
+    if dist > dist_threshold * ((features1["box_size"] + features2["box_size"])/2): # Avreage box size times the threshold
+        return False
+    return True
     
 #=====================================================================================
 #================================= NOT IN USE ========================================
