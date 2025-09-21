@@ -3,12 +3,49 @@ import pandas as pd
 import os
 import cv2
 from scipy.fft import fft, fftfreq
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
-from sklearn.cluster import DBSCAN
+# from sklearn.cluster import DBSCAN
 from sctn.resonator import resonator
 from my_resonators import clk_freq
-from concurrent.futures import ProcessPoolExecutor
+# from concurrent.futures import ProcessPoolExecutor
 from scipy.spatial.distance import cdist
+import random
+# from openpyxl import load_workbook
+# from openpyxl.styles import PatternFill
+# import xlsxwriter
+# from matplotlib.colors import ListedColormap
+# import datashader as ds
+# from datashader import transfer_functions as tf
+# from datashader.colors import Greys9
+# from holoviews.operation.datashader import datashade
+# from matplotlib.colors import to_rgb
+import matplotlib.cm as cm
+
+color_list = [
+    (255, 153, 153),  # #FF9999
+    (153, 255, 153),  # #99FF99
+    (153, 153, 255),  # #9999FF
+    (255, 255, 153),  # #FFFF99
+    (255, 178, 102),  # #FFB266
+    (178, 102, 255),  # #B266FF
+    (102, 255, 178),  # #66FFB2
+    (255, 102, 178),  # #FF66B2
+    (102, 178, 255),  # #66B2FF
+    (178, 255, 102),  # #B2FF66
+    (255, 102, 102),  # #FF6666
+    (102, 255, 102),  # #66FF66
+    (102, 102, 255),  # #6666FF
+    (255, 255, 102),  # #FFFF66
+    (255, 102, 255),  # #FF66FF
+    (102, 255, 255),  # #66FFFF
+    (178, 102, 102),  # #B26666
+    (102, 178, 102),  # #66B266
+    (102, 102, 178),  # #6666B2
+    (178, 178, 102),  # #B2B266
+]
+
 
 #====Function to load data into workable 
 def load_data(file_path, time = 1e6, time_frame = 0.33):
@@ -235,7 +272,7 @@ def cluster_fetures(coords, labels):
         if label == -1:
             continue
         cluster_points = coords[labels == label]
-        centroid = cluster_points.mean(axis=0)
+        centroid = cluster_points.mean(axis=0).astype(int)
 
         xmin, ymin = cluster_points.min(axis=0)
         xmax, ymax = cluster_points.max(axis=0)
@@ -244,6 +281,8 @@ def cluster_fetures(coords, labels):
         features.append({
             "label": label,
             "centroid": centroid,
+            "Vstart": None, # Vector start only in moving cluster
+            "Vend": None, # Vector end only in moving cluster
             "min": (xmin, ymin),
             "max":(xmax, ymax),
             "points": cluster_points,
@@ -252,23 +291,22 @@ def cluster_fetures(coords, labels):
         })
     return features
 
-#=====================================================================================
-#================================= TEST ==============================================
-#=====================================================================================
 # def associate_bubbles(current_clusters, previous_clusters, max_distance = 10):
-    # clusters array == [{'id': int, 'x_mid': int, 'y_mid': int, 'h': int, 'w':int}]
 
 def merge_clusters(pos_cluster, neg_cluster):
+    # Mearge 2 clusters (pos & neg) into one moving cluster
     merged_points = np.vstack([pos_cluster["points"], neg_cluster["points"]])
     xmin, ymin = merged_points.min(axis=0)
     xmax, ymax = merged_points.max(axis=0)
-    centroid = merged_points.mean(axis=0)
+    centroid = merged_points.mean(axis=0).astype(int)
 
     merged_cluster = {
         "label": f"merged_{pos_cluster['label']}_{neg_cluster['label']}",
         "centroid": centroid,
         "min": (xmin, ymin),
         "max": (xmax, ymax),
+        "Vstart": pos_cluster["centroid"],
+        "Vend": neg_cluster["centroid"],
         "points": merged_points,
         "box_size": np.sqrt((xmax - xmin) ** 2 + (ymax - ymin) ** 2),
         "size": len(merged_points)
@@ -276,18 +314,92 @@ def merge_clusters(pos_cluster, neg_cluster):
 
     return merged_cluster
 
-def cluster_correlation(features1, features2, size_diff = 2, dist_threshold = 2):
+def cluster_correlation(features1, features2, size_diff = 2, dist_threshold = 1.5, angle_thresh = 30, speed_thresh = 0.3, size_tol = 5000):
     # Checks if 2 clusters are close enough and similer size to be labeld as correlated
+    # Size consistancy 
+    ratio = min(features1["size"]/  features2["size"],features2["size"] / features1["size"]) if features2["size"] > 0 and features1["size"] > 0 else 0 # The size of the object is consistent
+    if ratio < 1/size_diff:
+        return False
+    avg_size = (features1["box_size"] + features2["box_size"])/2 # Avreage Box size
+    # Checking if centers of mass close enogh (enogh to check if 2 non moving clusters are correlated)
     x1, y1 = features1["centroid"]
-    x2, y2 = features2["centroid"]
+    x2, y2 = features2["centroid"]  
     dist = np.sqrt((x1 - x2)**2 + (y1 - y2)**2)
-    ratio = features1["size"]/  features2["size"] if features2["size"] > 0 else 0
-    if ratio < 1/size_diff or size_diff > 4.0:
+    if dist > dist_threshold * avg_size: # Avreage box size times the threshold
         return False
     
-    if dist > dist_threshold * ((features1["box_size"] + features2["box_size"])/2): # Avreage box size times the threshold
-        return False
+    # Corralation between 2 moving clusters
+    if not(features1["Vstart"] is None or features2["Vstart"] is None):         # Movement Vectors
+        v1 = np.array(features1["Vend"]) - np.array(features1["Vstart"]) 
+        v2 = np.array(features2["Vend"]) - np.array(features2["Vstart"])
+
+        # Magnitudes
+        n1, n2 = np.linalg.norm(v1), np.linalg.norm(v2)
+        # Normalize vectors
+        u1, u2 = v1 / n1, v2 / n2
+
+        # --- Angle difference (allow flip) ---
+        cos_theta = np.dot(u1, u2)
+        angle_diff = np.degrees(np.arccos(np.clip(cos_theta, -1, 1)))
+
+        # Adaptive angle threshold: smaller clusters → looser tolerance
+        adaptive_angle_thresh = angle_thresh + size_tol / (avg_size + 1)  # big tolerance for small objects
+        if not (angle_diff <= adaptive_angle_thresh or abs(angle_diff - 180) <= adaptive_angle_thresh):
+            return False
+
+        # speed_diff = abs(scaled_n1 - scaled_n2) / max(scaled_n1, scaled_n2, 1e-6)
+        speed_diff = n1/n2
+        adaptive_speed_thresh = max(speed_thresh - 15 / avg_size, speed_thresh/20)  # smaller cluster → bigger tolerance
+
+        if speed_diff < adaptive_speed_thresh or speed_diff > 1 / adaptive_speed_thresh:
+            return False
+
     return True
+
+# Draw cluster outling 
+def draw_cluster_outline(img, points, color=(0,255,0), thickness=2, epsilon = 2.0):
+    pts = np.array(points, dtype=np.int32)
+    hull = cv2.convexHull(pts)
+    approx = cv2.approxPolyDP(hull, epsilon, True)  # simplify outline
+    cv2.polylines(img, [approx], isClosed=True, color=color, thickness=thickness)
+
+#=====================================================================================
+#================================= TEST ==============================================
+#=====================================================================================
+# Input frame width and height and list of all boxes found, outputs pixel that is not in any box
+def get_random_background_pixel(width, height, object_boxes):
+    while True:
+        x = random.randint(0, width - 1)
+        y = random.randint(0, height - 1)
+        inside = False
+        for (xmin, ymin, xmax, ymax) in object_boxes:
+            if xmin <= x <= xmax and ymin <= y <= ymax:
+                inside = True
+                break
+        if not inside:
+            return x, y
+        
+def cluster_matrix(save_path, height, width, features, cluster_type, frame_number, heatmap_threshold=50000):
+    n_clusters = len(features)
+    colors = cm.get_cmap('tab20', n_clusters)
+
+    fig, ax = plt.subplots(figsize=(10, 7))
+    
+    for idx, f in enumerate(features):
+        points = f["points"]
+        ax.scatter(points[:,0], points[:,1], s=1, 
+                   color=colors(idx), label=f"Cluster {f['label']}: {f['size']} events")
+    
+    ax.set_xlim(0, width)
+    ax.set_ylim(0, height)
+    ax.invert_yaxis()  # match image coords
+    ax.set_xlabel("X Pixel Coordinate")
+    ax.set_ylabel("Y Pixel Coordinate")
+    ax.set_title(f"Frame {frame_number}, {cluster_type} Cluster Points", fontsize=14)
+    ax.legend(loc="upper right", markerscale=4, fontsize=9, frameon=True)
+
+    plt.savefig(save_path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
     
 #=====================================================================================
 #================================= NOT IN USE ========================================

@@ -143,6 +143,17 @@ def resonator_402():
     resonator.log_out_spikes(-1)
     return resonator
 
+def resonator_436():
+    resonator = simple_resonator(
+        freq0=436,
+        clk_freq=clk_freq,
+        lf = 4,
+        thetas = [-58.654, -47.541, -42.627, -40.103],
+        weights = [187.055, 72.849, 94.515, 84.064, 81.135],
+        )
+    resonator.log_out_spikes(-1)
+    return resonator
+
 def resonator_462():
     resonator = simple_resonator(
         freq0=462,
@@ -154,6 +165,17 @@ def resonator_462():
     resonator.log_out_spikes(-1)
     return resonator
 
+def resonator_477():
+    resonator = simple_resonator(
+        freq0=477,
+        clk_freq=clk_freq,
+        lf=4,
+        thetas=[62.781, -51.17, -46.907, -45.359],
+        weights=[200.524, 78.397, 101.374, 92.831, 91.37]
+    )
+    resonator.log_out_spikes(-1)
+    return resonator
+
 def resonator_509():
     resonator = simple_resonator(
         freq0=509,
@@ -162,6 +184,28 @@ def resonator_509():
         thetas = [-69.695, -55.164, -50.732, -47.095],
         weights = [219.153, 83.76, 109.522, 99.543, 95.232],
         )
+    resonator.log_out_spikes(-1)
+    return resonator
+
+def resonator_526():
+    resonator = simple_resonator(
+        freq0=526,
+        clk_freq=clk_freq,
+        lf=4,
+        thetas=[-78.345, -57.279, -52.931, -48.217],
+        weights=[239.144, 86.311, 114.419, 103.404, 97.135]
+    )
+    resonator.log_out_spikes(-1)
+    return resonator
+
+def resonator_545():
+    resonator = simple_resonator(
+        freq0=545,
+        clk_freq=clk_freq,
+        lf=4,
+        thetas=[-81.139, -59.604, -54.623, -49.983],
+        weights=[247.52, 89.124, 119.23, 106.752, 100.593]
+    )
     resonator.log_out_spikes(-1)
     return resonator
 
