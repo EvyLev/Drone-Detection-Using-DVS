@@ -283,7 +283,7 @@ def generate_frames(events, resolution, time_bin, my_resonators, my_resonators_f
                         # Redraw Movement Vector Above Cross
                         cv2.arrowedLine(frame, mem_moving_obj[k][0]["Vstart"], mem_moving_obj[k][0]["Vend"], (255,0,0), thickness=2, tipLength=0.4)
         #=========================================================================
-        # Only For Resonator Test: Create Vector picture
+        # Only For Resonator Test
         #=========================================================================
         if test_is == "Resonator":
             mem_moving_obj = []
@@ -298,10 +298,10 @@ def generate_frames(events, resolution, time_bin, my_resonators, my_resonators_f
     # Only For Object Test: Create Vector picture
     #=========================================================================
     if test_is == "Object":
-        vector_image = np.zeros((height, width, 3), dtype=np.uint8)
+        vector_image = np.full((height, width, 3), 230, dtype=np.uint8)
         for obj_indx in range(len(all_moving_obj)):
             for vec in all_moving_obj[obj_indx]:
-                cv2.arrowedLine(vector_image, vec[0], vec[1], color = (sf.color_list[obj_indx%len(sf.color_list)]))
+                cv2.arrowedLine(vector_image, vec[0], vec[1], color = (sf.color_list[obj_indx%len(sf.color_list)]),thickness= 2,tipLength=0.2)
         cv2.imwrite(f"{save_path}/vector_image.png", vector_image)
     #=========================================================================
     #=========================================================================
@@ -390,7 +390,7 @@ if __name__ == "__main__":
 
     # Test Types: "None", "Noise", "Object", "Resonator", "Matrix"
     # Generate frames with optimized code
-    frames = generate_frames(data, resolution, time_frame, my_resonators, my_resonators_freq, save_path) 
+    frames = generate_frames(data, resolution, time_frame, my_resonators, my_resonators_freq, save_path, test_is="Object") 
 
     # Define video parameters
     output_path = "event_video.mp4"
