@@ -168,7 +168,9 @@ def generate_frames(events, resolution, time_bin, my_resonators, my_resonators_f
 
                     updated = 0
                     for i in mem_moving_obj:
-                        if sf.cluster_correlation(merged_features, i[0]):
+                        if i[1] == 0: # Skip objects that were allrady updated in this frame
+                            continue
+                        elif sf.cluster_correlation(merged_features, i[0]):
                             i[0] = merged_features
                             i[1] = 0
                             #=========================================================================
