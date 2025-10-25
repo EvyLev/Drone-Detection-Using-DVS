@@ -238,8 +238,8 @@ def generate_frames(events, resolution, time_bin, my_resonators, my_resonators_f
                     if test_is in ["None", "Resonator"]:
                         # Extract events for the selected pixel
                         pixel_data = current_events[(current_events["x"] == pixel_x) & (current_events["y"] == pixel_y)]
-                        # if len(pixel_data) < 10:
-                        #     continue
+                        if len(pixel_data) < 10:
+                            continue
                         pixel_t = pixel_data['t'].values - pixel_data['t'].min()
                         pixel_p = pixel_data['p'].values * 2 - 1
 
@@ -254,22 +254,20 @@ def generate_frames(events, resolution, time_bin, my_resonators, my_resonators_f
                         # Polarity and FFT of signal
                         fft_freq = sf.event_pixel_fft(my_signal.copy(), pixel_x, pixel_y, folder) # Get max freq of FFT
 
-                        if k == 0:
-                            values[3] = fft_freq
+                        values[3] = fft_freq
 
                         args = [(j, my_signal, folder, my_resonators, my_resonators_freq, fft_freq, pixel_x, pixel_y) for j in range(len(my_resonators))]
                         with ProcessPoolExecutor(max_workers=os.cpu_count()) as executor:
                             results = list(executor.map(sf.process_resonator, args))
 
                         # Fill `values`
-                        if k == 0:
-                            for j, max_amp, min_amp, mean_amp, diff, fft_diff in results: # Most values in result are not currently used
-                                i = 4 + j
-                                values[i] = diff
-                                if diff > 250: # Diff is the max amp - min amp, this is the threshold, for better results should implemnt search for max diff that are close enogh in time
-                                    mem_moving_obj[k][2] = 1
-                                    values[-1] = "Yes"
-                                    values[-2] = "Yes"
+                        for j, max_amp, min_amp, mean_amp, diff, fft_diff in results: # Most values in result are not currently used
+                            i = 4 + j
+                            values[i] = diff
+                            if diff > 250: # Diff is the max amp - min amp, this is the threshold, for better results should implemnt search for max diff that are close enogh in time
+                                mem_moving_obj[k][2] = 1
+                                values[-1] = "Yes"
+                                values[-2] = "Yes"
                     # Create Yellow Cross on Mooving Object that is Drone
                     if mem_moving_obj[k][2] == 1:
                         cx, cy = int(current_features["centroid"][0]), int(current_features["centroid"][1])
@@ -390,7 +388,7 @@ if __name__ == "__main__":
 
     # Test Types: "None", "Noise", "Object", "Resonator", "Matrix"
     # Generate frames with optimized code
-    frames = generate_frames(data, resolution, time_frame, my_resonators, my_resonators_freq, save_path, test_is="None") 
+    frames = generate_frames(data, resolution, time_frame, my_resonators, my_resonators_freq, save_path, test_is="Object") 
 
     # Define video parameters
     output_path = "event_video.mp4"

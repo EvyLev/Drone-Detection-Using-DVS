@@ -206,7 +206,7 @@ def plot_resonator_on_signal(
         plt.title(f'Resonator Response to Input Signal')
     else:
         plt.title(f'Resonator, {resonator_freq}Hz, Response to Input Signal in Pixel ({pixel_x}, {pixel_y})')
-    plt.xlabel("Time [s]")
+    plt.xlabel("Time [ms]")
     plt.ylabel("Amplitude")
     plt.grid(True)
     plt.plot( np.linspace(0, total_len / (clk_freq / resonator_freq), len(y_spikes)), y_spikes)
