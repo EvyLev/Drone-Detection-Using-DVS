@@ -62,7 +62,7 @@ def generate_frames(events, resolution, time_bin, my_resonators, my_resonators_f
         # Update mem_move
         i = 0
         while i < len(mem_moving_obj):
-            if mem_moving_obj[i][1] == 2:
+            if mem_moving_obj[i][1] == 4:
                 mem_moving_obj.pop(i)
             else:
                 mem_moving_obj[i][1] += 1
@@ -86,10 +86,10 @@ def generate_frames(events, resolution, time_bin, my_resonators, my_resonators_f
         neg_coords = neg_events[['x', 'y']].values
         # Cluster using DBSCAN
         if len(pos_coords) > 0:
-            pos_clustering = DBSCAN(eps=16, min_samples=150, n_jobs=-1).fit(pos_coords) # Pos events are more sparse 
+            pos_clustering = DBSCAN(eps=20, min_samples=150, n_jobs=-1).fit(pos_coords) # Pos events are more sparse 
             pos_labels = pos_clustering.labels_
         if len(neg_coords) > 0:
-            neg_clustering = DBSCAN(eps=10, min_samples=150, n_jobs=-1).fit(neg_coords)
+            neg_clustering = DBSCAN(eps=15, min_samples=150, n_jobs=-1).fit(neg_coords)
             neg_labels = neg_clustering.labels_
 
         # Set defult csv output
@@ -170,7 +170,7 @@ def generate_frames(events, resolution, time_bin, my_resonators, my_resonators_f
                     for i in mem_moving_obj:
                         if i[1] == 0: # Skip objects that were allrady updated in this frame
                             continue
-                        elif sf.cluster_correlation(merged_features, i[0]):
+                        if sf.cluster_correlation(merged_features, i[0]):
                             i[0] = merged_features
                             i[1] = 0
                             #=========================================================================
@@ -238,8 +238,8 @@ def generate_frames(events, resolution, time_bin, my_resonators, my_resonators_f
                     if test_is in ["None", "Resonator"]:
                         # Extract events for the selected pixel
                         pixel_data = current_events[(current_events["x"] == pixel_x) & (current_events["y"] == pixel_y)]
-                        if len(pixel_data) < 10:
-                            continue
+                        # if len(pixel_data) < 10:
+                        #     continue
                         pixel_t = pixel_data['t'].values - pixel_data['t'].min()
                         pixel_p = pixel_data['p'].values * 2 - 1
 
@@ -390,7 +390,7 @@ if __name__ == "__main__":
 
     # Test Types: "None", "Noise", "Object", "Resonator", "Matrix"
     # Generate frames with optimized code
-    frames = generate_frames(data, resolution, time_frame, my_resonators, my_resonators_freq, save_path, test_is="Object") 
+    frames = generate_frames(data, resolution, time_frame, my_resonators, my_resonators_freq, save_path, test_is="None") 
 
     # Define video parameters
     output_path = "event_video.mp4"
