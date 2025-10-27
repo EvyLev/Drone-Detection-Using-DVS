@@ -206,7 +206,7 @@ def plot_resonator_on_signal(
         plt.title(f'Resonator Response to Input Signal')
     else:
         plt.title(f'Resonator, {resonator_freq}Hz, Response to Input Signal in Pixel ({pixel_x}, {pixel_y})')
-    plt.xlabel("Time [s]")
+    plt.xlabel("Time [ms]")
     plt.ylabel("Amplitude")
     plt.grid(True)
     plt.plot( np.linspace(0, total_len / (clk_freq / resonator_freq), len(y_spikes)), y_spikes)
@@ -335,6 +335,17 @@ def cluster_correlation(features1, features2, size_diff = 2, dist_threshold = 1.
 
         # Magnitudes
         n1, n2 = np.linalg.norm(v1), np.linalg.norm(v2)
+
+        # --- Handle tiny movement vectors ---
+        min_motion_threshold = 3.0  # pixels; below this, direction is unreliable
+        if n1 < min_motion_threshold or n2 < min_motion_threshold:
+            # Treat them as similar if both are nearly static
+            if abs(n1 - n2) < min_motion_threshold*2:
+                return True
+            else:
+                return False
+
+
         # Normalize vectors
         u1, u2 = v1 / n1, v2 / n2
 

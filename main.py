@@ -62,7 +62,7 @@ def generate_frames(events, resolution, time_bin, my_resonators, my_resonators_f
         # Update mem_move
         i = 0
         while i < len(mem_moving_obj):
-            if mem_moving_obj[i][1] == 2:
+            if mem_moving_obj[i][1] == 4:
                 mem_moving_obj.pop(i)
             else:
                 mem_moving_obj[i][1] += 1
@@ -86,10 +86,10 @@ def generate_frames(events, resolution, time_bin, my_resonators, my_resonators_f
         neg_coords = neg_events[['x', 'y']].values
         # Cluster using DBSCAN
         if len(pos_coords) > 0:
-            pos_clustering = DBSCAN(eps=16, min_samples=150, n_jobs=-1).fit(pos_coords) # Pos events are more sparse 
+            pos_clustering = DBSCAN(eps=20, min_samples=150, n_jobs=-1).fit(pos_coords) # Pos events are more sparse 
             pos_labels = pos_clustering.labels_
         if len(neg_coords) > 0:
-            neg_clustering = DBSCAN(eps=10, min_samples=150, n_jobs=-1).fit(neg_coords)
+            neg_clustering = DBSCAN(eps=15, min_samples=150, n_jobs=-1).fit(neg_coords)
             neg_labels = neg_clustering.labels_
 
         # Set defult csv output
@@ -168,6 +168,8 @@ def generate_frames(events, resolution, time_bin, my_resonators, my_resonators_f
 
                     updated = 0
                     for i in mem_moving_obj:
+                        if i[1] == 0: # Skip objects that were allrady updated in this frame
+                            continue
                         if sf.cluster_correlation(merged_features, i[0]):
                             i[0] = merged_features
                             i[1] = 0
@@ -252,22 +254,20 @@ def generate_frames(events, resolution, time_bin, my_resonators, my_resonators_f
                         # Polarity and FFT of signal
                         fft_freq = sf.event_pixel_fft(my_signal.copy(), pixel_x, pixel_y, folder) # Get max freq of FFT
 
-                        if k == 0:
-                            values[3] = fft_freq
+                        values[3] = fft_freq
 
                         args = [(j, my_signal, folder, my_resonators, my_resonators_freq, fft_freq, pixel_x, pixel_y) for j in range(len(my_resonators))]
                         with ProcessPoolExecutor(max_workers=os.cpu_count()) as executor:
                             results = list(executor.map(sf.process_resonator, args))
 
                         # Fill `values`
-                        if k == 0:
-                            for j, max_amp, min_amp, mean_amp, diff, fft_diff in results: # Most values in result are not currently used
-                                i = 4 + j
-                                values[i] = diff
-                                if diff > 250: # Diff is the max amp - min amp, this is the threshold, for better results should implemnt search for max diff that are close enogh in time
-                                    mem_moving_obj[k][2] = 1
-                                    values[-1] = "Yes"
-                                    values[-2] = "Yes"
+                        for j, max_amp, min_amp, mean_amp, diff, fft_diff in results: # Most values in result are not currently used
+                            i = 4 + j
+                            values[i] = diff
+                            if diff > 250: # Diff is the max amp - min amp, this is the threshold, for better results should implemnt search for max diff that are close enogh in time
+                                mem_moving_obj[k][2] = 1
+                                values[-1] = "Yes"
+                                values[-2] = "Yes"
                     # Create Yellow Cross on Mooving Object that is Drone
                     if mem_moving_obj[k][2] == 1:
                         cx, cy = int(current_features["centroid"][0]), int(current_features["centroid"][1])
@@ -281,7 +281,7 @@ def generate_frames(events, resolution, time_bin, my_resonators, my_resonators_f
                         # Redraw Movement Vector Above Cross
                         cv2.arrowedLine(frame, mem_moving_obj[k][0]["Vstart"], mem_moving_obj[k][0]["Vend"], (255,0,0), thickness=2, tipLength=0.4)
         #=========================================================================
-        # Only For Resonator Test: Create Vector picture
+        # Only For Resonator Test
         #=========================================================================
         if test_is == "Resonator":
             mem_moving_obj = []
@@ -296,10 +296,10 @@ def generate_frames(events, resolution, time_bin, my_resonators, my_resonators_f
     # Only For Object Test: Create Vector picture
     #=========================================================================
     if test_is == "Object":
-        vector_image = np.zeros((height, width, 3), dtype=np.uint8)
+        vector_image = np.full((height, width, 3), 230, dtype=np.uint8)
         for obj_indx in range(len(all_moving_obj)):
             for vec in all_moving_obj[obj_indx]:
-                cv2.arrowedLine(vector_image, vec[0], vec[1], color = (sf.color_list[obj_indx%len(sf.color_list)]))
+                cv2.arrowedLine(vector_image, vec[0], vec[1], color = (sf.color_list[obj_indx%len(sf.color_list)]),thickness= 2,tipLength=0.2)
         cv2.imwrite(f"{save_path}/vector_image.png", vector_image)
     #=========================================================================
     #=========================================================================
@@ -388,7 +388,7 @@ if __name__ == "__main__":
 
     # Test Types: "None", "Noise", "Object", "Resonator", "Matrix"
     # Generate frames with optimized code
-    frames = generate_frames(data, resolution, time_frame, my_resonators, my_resonators_freq, save_path) 
+    frames = generate_frames(data, resolution, time_frame, my_resonators, my_resonators_freq, save_path, test_is="Object") 
 
     # Define video parameters
     output_path = "event_video.mp4"
